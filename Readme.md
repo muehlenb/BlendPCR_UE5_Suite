@@ -64,6 +64,9 @@ The calibration pipeline is still experimental and its accuracy depends on the c
 
 ![Camera Registration](https://raw.githubusercontent.com/muehlenb/BlendPCR_UE5_Suite/main/img/Calibration.jpg)
 
+**Important:** Make sure that both `PoseSolver.exe` (located in `app\Binaries\Win64\posegraph`) and the Unreal Engine application are allowed through your firewall. Otherwise, the UI (green in the image above) will remain gray even when you move the checkerboard within the camera's field of view.
+For troubleshooting purposes, you can temporarily disable your firewall to check whether it is causing the issue. Re-enable it afterward.
+
 ### Pose-Graph Solver
 
 Due to the assumed effort of integrating g2o directly into Unreal Engine's build process, pose-graph optimization runs in a **separate executable**.
