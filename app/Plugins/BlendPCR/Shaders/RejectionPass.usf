@@ -1,0 +1,82 @@
+#include "/Engine/Private/Common.ush"
+
+Texture2D<float4> PointCloudTex : register(t0);
+Texture2D<float4> ColorTex      : register(t1);
+SamplerState PointSampler       : register(s0);
+
+float2 TexSize;
+uint ShouldClip;
+float4x4 ClipTransform;
+float4x4 ModelMatrix;
+
+// -------------------------------------------------------------
+// Fullscreen-Triangle Vertex Shader (kein Vertex-Buffer nötig)
+// -------------------------------------------------------------
+struct VSOutput
+{
+    float4 Position : SV_POSITION;
+    float2 UV       : TEXCOORD0;
+};
+
+VSOutput MainVS(uint VertexID : SV_VertexID)
+{
+    VSOutput Out;
+
+    // drei Ecken des Fullscreen-Triangles
+    float2 Pos[3] =
+    {
+        float2(-1.0, -1.0),
+        float2(-1.0, 3.0),
+        float2(3.0, -1.0)
+    };
+
+    Out.Position = float4(Pos[VertexID], 0.0, 1.0);
+    Out.UV = float2(Out.Position.x * 0.5f + 0.5f, 1.0f - (Out.Position.y * 0.5f + 0.5f));
+    return Out;
+}
+
+// -------------------------------------------------------------
+// Pixel Shader – berechnet Rejection-Maske
+// -------------------------------------------------------------
+float4 MainPS(VSOutput In) : SV_Target0
+{
+    float2 texelSize = 1.0 / TexSize;
+    float2 halfTexel = 0.5 / TexSize;
+    
+    float3 pcPoint = PointCloudTex.Sample(PointSampler, In.UV).xyz;
+    float3 rgb = ColorTex.Sample(PointSampler, In.UV).xyz;
+
+    if (rgb.r < 0.01 && rgb.g < 0.01 && rgb.b < 0.01)
+        return float4(1, 1, 1, 1);
+
+    if (ShouldClip)
+    {
+        float4 pointClipSpace = mul(mul(float4(pcPoint * 100, 1.0), ModelMatrix), ClipTransform);
+              
+        if (any(pointClipSpace.xyz < float3(-50.0, -50.0, -50.0)) || any(pointClipSpace.xyz > float3(50.0, 50.0, 50.0)))
+            return float4(1, 1, 1, 1);
+    }
+    
+    [loop]
+    for (int x = -1; x <= 1; ++x)
+    {
+        [loop]
+        for (int y = -1; y <= 1; ++y)
+        {
+            if (x == 0 && y == 0)
+                continue;
+
+            float2 otherUV = In.UV + float2(x, y) * texelSize;
+            float3 otherPoint = PointCloudTex.Sample(PointSampler, otherUV).xyz;
+
+            if (any(isnan(otherPoint)))
+                return float4(1, 1, 1, 1);
+
+            float len = length(otherPoint - pcPoint);
+            if (len > 0.02 * pcPoint.z || isnan(len))
+                return float4(1, 1, 1, 1);
+        }
+    }
+
+    return float4(0, 0, 0, 1);
+}

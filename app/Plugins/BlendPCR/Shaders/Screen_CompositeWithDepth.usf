@@ -1,0 +1,63 @@
+#include "/Engine/Private/Common.ush"
+
+struct VSOutput
+{
+    float4 Position : SV_POSITION;
+    float2 UV : TEXCOORD0;
+};
+
+VSOutput MainVS(uint VertexID : SV_VertexID)
+{
+    VSOutput Out;
+    float2 Pos[3] =
+    {
+        float2(-1.0, -1.0),
+        float2(-1.0, 3.0),
+        float2(3.0, -1.0)
+    };
+    Out.Position = float4(Pos[VertexID], 0.0, 1.0);
+    Out.UV = float2(Out.Position.x * 0.5f + 0.5f,
+                    1.0f - (Out.Position.y * 0.5f + 0.5f));
+    return Out;
+}
+
+Texture2D SourceColor;
+Texture2D SourceDepth;
+Texture2D<float> SceneDepth;  // Scene Depth zum Vergleichen (nur lesen!)
+SamplerState PointSampler;
+SamplerState LinearSampler;
+
+float4 ViewRect;
+float2 SceneTexSize;
+
+float2 GetSceneUV(float2 LocalUV, float4 ViewRect, float2 SceneTexSize)
+{
+    float2 GlobalUV = (LocalUV * ViewRect.zw + ViewRect.xy) / SceneTexSize;
+    return GlobalUV;
+}
+
+float4 MainPS(VSOutput In) : SV_Target0
+{
+    // Sample Source mit Bilinear für bessere Qualität beim Upsampling
+    float4 color = SourceColor.Sample(LinearSampler, In.UV);
+    float sourceDepth = SourceDepth.Sample(PointSampler, In.UV).r;
+    
+    // Sample Scene Depth zum Vergleichen (Point Sampling für exakte Werte)
+    float sceneDepth = SceneDepth.Sample(PointSampler, GetSceneUV(In.UV, ViewRect, SceneTexSize)).r;
+    
+    // Manueller Depth Test
+    // UE5 verwendet Reversed-Z: 0.0 = far, 1.0 = near
+    // Verwerfe wenn Source weiter weg ist als Scene (sourceDepth < sceneDepth)
+    if (sourceDepth < sceneDepth - 0.00001)  // Kleiner Epsilon für Floating-Point Toleranz
+    {
+        discard;
+    }
+    
+    // Wenn Alpha = 0, auch verwerfen
+    if (color.a < 0.001)
+    {
+        discard;
+    }
+    
+    return color;
+}

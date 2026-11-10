@@ -1,0 +1,96 @@
+#include "/Engine/Private/Common.ush"
+
+// Eingabe-Texturen
+Texture2D<uint> DepthTex : register(t0); // PF_R16_UINT – Depth in mm
+Texture2D<float4> ColorTex : register(t1); // PF_B8G8R8A8 – RGB Color
+SamplerState PointSampler : register(s0);
+
+float2 TexSize;
+
+struct VSOutput
+{
+    float4 Position : SV_POSITION;
+    float2 UV : TEXCOORD0;
+};
+
+VSOutput MainVS(uint VertexID : SV_VertexID)
+{
+    VSOutput Out;
+
+    float2 Pos[3] =
+    {
+        float2(-1.0, -1.0),
+        float2(-1.0, 3.0),
+        float2(3.0, -1.0)
+    };
+
+    Out.Position = float4(Pos[VertexID], 0.0, 1.0);
+    Out.UV = float2(Out.Position.x * 0.5f + 0.5f, 1.0f - (Out.Position.y * 0.5f + 0.5f));
+    return Out;
+}
+
+struct PSOutput
+{
+    uint OutDepth : SV_Target0;
+    float4 OutColor : SV_Target1;
+};
+
+PSOutput MainPS(VSOutput In)
+{
+    PSOutput Out;
+    
+    const float2 texel = 1.0 / TexSize;
+    const float sigma = 2.0;
+    
+    uint depthRaw = DepthTex.Load(int3(In.UV * TexSize, 0)).r;
+    float depthM = float(depthRaw) * 0.001f; // mm → m
+    float4 color = ColorTex.Load(int3(In.UV * TexSize, 0)).rgba;
+
+    bool isInvalid = (depthM < 0.1f) || isnan(depthM);
+
+    if (isInvalid)
+    {
+        float depthSum = 0.0f;
+        float weightSum = 0.0f;
+        float3 colorSum = 0.0f;
+        
+        [loop]
+        for (int dy = -3; dy <= 3; ++dy)
+        {
+            [loop]
+            for (int dx = -3; dx <= 3; ++dx)
+            {
+                float2 uvN = In.UV + float2(dx, dy) * texel;
+                
+                if (uvN.x < 0.0 || uvN.x > 1.0 || uvN.y < 0.0 || uvN.y > 1.0)
+                    continue;
+
+                uint nDepthRaw = DepthTex.Load(int3(uvN * TexSize, 0)).r;
+                float nDepthM = float(nDepthRaw) * 0.001f;
+
+                if (nDepthM > 0.1f && !isnan(nDepthM))
+                {
+                    float4 nColor = ColorTex.Load(int3(uvN * TexSize, 0)).rgba;
+                    
+                    float dist2 = float(dx * dx + dy * dy);
+                    float w = exp(-dist2 / (2.0 * sigma * sigma));
+
+                    depthSum += nDepthM * w;
+                    colorSum += nColor.rgb * w;
+                    weightSum += w;
+                }
+            }
+        }
+
+        if (weightSum > 0.5f)
+        {
+            depthM = depthSum / weightSum;
+            color.rgb = colorSum / weightSum;
+        }
+    }
+    
+    Out.OutDepth = (uint) (depthM * 1000.0f);
+    Out.OutColor = color;
+
+    return Out;
+}

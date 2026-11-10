@@ -1,0 +1,118 @@
+﻿#include "/Engine/Private/Common.ush"
+
+Texture2D<float4> TextureVertices : register(t0);
+Texture2D<float> TextureEdgeProximity : register(t1);
+Texture2D<float4> TextureColor : register(t2);
+SamplerState LinearSampler : register(s0);
+
+float4x4 ProjectionMatrix;
+float4x4 ViewMatrix;
+float4x4 ModelMatrix;
+int Stride;
+int TexWidth;
+int TexHeight;
+
+struct VSOutput
+{
+    float4 PosH : SV_Position;
+    float2 UV : TEXCOORD0;
+    float Edge : TEXCOORD1;
+    float4 Color : COLOR;
+};
+
+// Hilfsstruktur für ein Vertex-Sample
+struct SampleV
+{
+    float4 CamPos;
+    float Edge;
+    float4 Color;
+};
+
+// Samplen eines Punktes aus den Texturen
+SampleV SampleAt(int2 ij)
+{
+    float2 uv = (float2(ij) + 0.5.xx) / float2(TexWidth, TexHeight);
+    SampleV s;
+    float4 rawCam = TextureVertices.SampleLevel(LinearSampler, uv, 0);
+    s.CamPos = float4(rawCam.xyz * 100, 1.0);
+    s.Edge = TextureEdgeProximity.SampleLevel(LinearSampler, uv, 0);
+    s.Color = TextureColor.SampleLevel(LinearSampler, uv, 0);
+    return s;
+}
+
+bool InvalidVertex(SampleV s)
+{
+    return (s.CamPos.z < 0.1) || (s.Edge > 0.99);
+}
+
+VSOutput MainVS(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
+{
+    VSOutput o;
+
+    int cellsX = (TexWidth - 1) / Stride;
+    int cx = instanceId % cellsX;
+    int cy = instanceId / cellsX;
+    bool tri1 = (vertexId >= 3);
+    int lid = tri1 ? (vertexId - 3) : vertexId;
+
+    int2 TRI0[3] = { int2(0, 0), int2(1, 0), int2(0, 1) };
+    int2 TRI1[3] = { int2(1, 1), int2(0, 1), int2(1, 0) };
+
+    int2 coarseTL = int2(cx * Stride, cy * Stride);
+
+    int2 o0 = (tri1 ? TRI1[0] : TRI0[0]) * Stride;
+    int2 o1 = (tri1 ? TRI1[1] : TRI0[1]) * Stride;
+    int2 o2 = (tri1 ? TRI1[2] : TRI0[2]) * Stride;
+
+    int2 ij0 = coarseTL + o0;
+    int2 ij1 = coarseTL + o1;
+    int2 ij2 = coarseTL + o2;
+
+    // Drei Ecken samplen
+    SampleV s0 = SampleAt(ij0);
+    SampleV s1 = SampleAt(ij1);
+    SampleV s2 = SampleAt(ij2);
+
+    bool triInvalid = InvalidVertex(s0) || InvalidVertex(s1) || InvalidVertex(s2);
+
+    // aktuelles Vertex auswählen
+    SampleV sv;
+    if (lid == 0)
+        sv = s0;
+    else if (lid == 1)
+        sv = s1;
+    else
+        sv = s2;
+
+    o.UV = (float2(coarseTL + ((tri1 ? TRI1[lid] : TRI0[lid]) * Stride)) + 0.5.xx)
+             / float2(TexWidth, TexHeight);
+    o.Edge = sv.Edge;
+    o.Color = sv.Color;
+
+    float4 worldPos = mul(sv.CamPos, ModelMatrix);
+    float4 viewPos = mul(worldPos, ViewMatrix);
+    
+    //float4 worldPos = mul(ModelMatrix, sv.CamPos);
+    //float4 viewPos = mul(ViewMatrix, worldPos);
+
+    if (triInvalid)
+    {
+        // komplett außerhalb des Sichtfelds – wird nicht gerastert
+        o.PosH = float4(2.0, 2.0, 2.0, 1.0);
+    }
+    else
+    {
+        o.PosH = mul(viewPos, ProjectionMatrix);
+    }
+
+    return o;
+}
+
+float4 MainPS(VSOutput input) : SV_Target0
+{
+    if (input.Edge > 0.99)
+        discard;
+
+    // schreibe UV in RG-Kanäle
+    return float4(input.UV, 0, 1); //input.Color; //
+}

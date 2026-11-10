@@ -1,0 +1,74 @@
+#include "/Engine/Private/Common.ush"
+
+struct VSOutput
+{
+    float4 Position : SV_POSITION;
+    float2 UV : TEXCOORD0;
+};
+
+VSOutput MainVS(uint VertexID : SV_VertexID)
+{
+    VSOutput Out;
+    float2 Pos[3] =
+    {
+        float2(-1.0, -1.0),
+        float2(-1.0, 3.0),
+        float2(3.0, -1.0)
+    };
+    Out.Position = float4(Pos[VertexID], 0.0, 1.0);
+    Out.UV = float2(Out.Position.x * 0.5f + 0.5f,
+                    1.0f - (Out.Position.y * 0.5f + 0.5f));
+    return Out;
+}
+
+Texture2D<float> MajorCamTex;
+SamplerState LinearSampler;
+
+// Struct für Multiple Render Targets
+struct PSOutput
+{
+    float4 Color0 : SV_Target0;
+    float4 Color1 : SV_Target1;
+};
+
+PSOutput MainPS(VSOutput In)
+{
+    PSOutput Output;
+    
+    float result[8];
+    [unroll]
+    for (int i = 0; i < 8; ++i)
+        result[i] = 0.0f;
+    
+    uint texW, texH;
+    MajorCamTex.GetDimensions(texW, texH);
+    float2 halfTexelSize = 1.0 / float2(texW, texH);
+    float count = 0.0f;
+    
+    [loop]
+    for (int y = -10; y <= 10; ++y)
+    {
+        [loop]
+        for (int x = -10; x <= 10; ++x)
+        {
+            float2 currentUV = In.UV + halfTexelSize * float2(x, y);
+            float dominantCamF = MajorCamTex.Load(int3(currentUV * float2(texW, texH), 0)).r;
+            uint dominantCam = uint(dominantCamF * 8.0 + 0.5);
+            
+            [unroll]
+            for (int i = 0; i < 8; ++i)
+            {
+                result[i] += (dominantCam == uint(i)) ? 1.0f : 0.0f;
+            }
+            count += 1.0f;
+        }
+    }
+    
+    // Kameras 0-3 in erstes Target
+    Output.Color0 = float4(result[0] / count, result[1] / count, result[2] / count, result[3] / count);
+    
+    // Kameras 4-7 in zweites Target
+    Output.Color1 = float4(result[4] / count, result[5] / count, result[6] / count, result[7] / count);
+    
+    return Output;
+}

@@ -1,0 +1,253 @@
+#include "/Engine/Private/Common.ush"
+
+#define CAMERA_NUM 8
+
+Texture2D<float2> ScreenUV0 : register(t0);
+Texture2D<float2> ScreenUV1 : register(t1);
+Texture2D<float2> ScreenUV2 : register(t2);
+Texture2D<float2> ScreenUV3 : register(t3);
+Texture2D<float2> ScreenUV4 : register(t4);
+Texture2D<float2> ScreenUV5 : register(t5);
+Texture2D<float2> ScreenUV6 : register(t6);
+Texture2D<float2> ScreenUV7 : register(t7);
+
+Texture2D<float4> TexturePosition0 : register(t8);
+Texture2D<float4> TexturePosition1 : register(t9);
+Texture2D<float4> TexturePosition2 : register(t10);
+Texture2D<float4> TexturePosition3 : register(t11);
+Texture2D<float4> TexturePosition4 : register(t12);
+Texture2D<float4> TexturePosition5 : register(t13);
+Texture2D<float4> TexturePosition6 : register(t14);
+Texture2D<float4> TexturePosition7 : register(t15);
+
+Texture2D<float4> Quality0 : register(t16);
+Texture2D<float4> Quality1 : register(t17);
+Texture2D<float4> Quality2 : register(t18);
+Texture2D<float4> Quality3 : register(t19);
+Texture2D<float4> Quality4 : register(t20);
+Texture2D<float4> Quality5 : register(t21);
+Texture2D<float4> Quality6 : register(t22);
+Texture2D<float4> Quality7 : register(t23);
+
+float CameraActive0;
+float CameraActive1;
+float CameraActive2;
+float CameraActive3;
+float CameraActive4;
+float CameraActive5;
+float CameraActive6;
+float CameraActive7;
+
+float4x4 ModelMatrix0;
+float4x4 ModelMatrix1;
+float4x4 ModelMatrix2;
+float4x4 ModelMatrix3;
+float4x4 ModelMatrix4;
+float4x4 ModelMatrix5;
+float4x4 ModelMatrix6;
+float4x4 ModelMatrix7;
+
+float4x4 ViewMatrix;
+
+SamplerState LinearSampler : register(s0);
+
+float4x4 GetModelMatrix(int cameraId)
+{
+    if (cameraId == 0)
+        return ModelMatrix0;
+    if (cameraId == 1)
+        return ModelMatrix1;
+    if (cameraId == 2)
+        return ModelMatrix2;
+    if (cameraId == 3)
+        return ModelMatrix3;
+    if (cameraId == 4)
+        return ModelMatrix4;
+    if (cameraId == 5)
+        return ModelMatrix5;
+    if (cameraId == 6)
+        return ModelMatrix6;
+    if (cameraId == 7)
+        return ModelMatrix7;
+    return ModelMatrix0;
+}
+
+bool IsCameraActive(int cameraId)
+{
+    if (cameraId == 0)
+        return CameraActive0 > 0.5;
+    if (cameraId == 1)
+        return CameraActive1 > 0.5;
+    if (cameraId == 2)
+        return CameraActive2 > 0.5;
+    if (cameraId == 3)
+        return CameraActive3 > 0.5;
+    if (cameraId == 4)
+        return CameraActive4 > 0.5;
+    if (cameraId == 5)
+        return CameraActive5 > 0.5;
+    if (cameraId == 6)
+        return CameraActive6 > 0.5;
+    if (cameraId == 7)
+        return CameraActive7 > 0.5;
+    return false;
+}
+
+float2 GetScreenUV(int cameraId, float2 uv)
+{
+    if (cameraId == 0)
+        return ScreenUV0.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 1)
+        return ScreenUV1.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 2)
+        return ScreenUV2.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 3)
+        return ScreenUV3.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 4)
+        return ScreenUV4.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 5)
+        return ScreenUV5.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 6)
+        return ScreenUV6.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 7)
+        return ScreenUV7.SampleLevel(LinearSampler, uv, 0).xy;
+    return ScreenUV0.SampleLevel(LinearSampler, uv, 0).xy;
+}
+
+float3 GetPositionTex(int cameraId, float2 uv)
+{
+    if (cameraId == 0)
+        return TexturePosition0.SampleLevel(LinearSampler, uv, 0).xyz;
+    if (cameraId == 1)
+        return TexturePosition1.SampleLevel(LinearSampler, uv, 0).xyz;
+    if (cameraId == 2)
+        return TexturePosition2.SampleLevel(LinearSampler, uv, 0).xyz;
+    if (cameraId == 3)
+        return TexturePosition3.SampleLevel(LinearSampler, uv, 0).xyz;
+    if (cameraId == 4)
+        return TexturePosition4.SampleLevel(LinearSampler, uv, 0).xyz;
+    if (cameraId == 5)
+        return TexturePosition5.SampleLevel(LinearSampler, uv, 0).xyz;
+    if (cameraId == 6)
+        return TexturePosition6.SampleLevel(LinearSampler, uv, 0).xyz;
+    if (cameraId == 7)
+        return TexturePosition7.SampleLevel(LinearSampler, uv, 0).xyz;
+    return TexturePosition0.SampleLevel(LinearSampler, uv, 0).xyz;
+}
+
+float2 GetQualityTex(int cameraId, float2 uv)
+{
+    if (cameraId == 0)
+        return Quality0.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 1)
+        return Quality1.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 2)
+        return Quality2.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 3)
+        return Quality3.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 4)
+        return Quality4.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 5)
+        return Quality5.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 6)
+        return Quality6.SampleLevel(LinearSampler, uv, 0).xy;
+    if (cameraId == 7)
+        return Quality7.SampleLevel(LinearSampler, uv, 0).xy;
+    return Quality0.SampleLevel(LinearSampler, uv, 0).xy;
+}
+
+struct VSOutput
+{
+    float4 Position : SV_POSITION;
+    float2 UV : TEXCOORD0;
+};
+
+VSOutput MainVS(uint VertexID : SV_VertexID)
+{
+    VSOutput Out;
+
+    float2 Pos[3] =
+    {
+        float2(-1.0, -1.0),
+        float2(-1.0, 3.0),
+        float2(3.0, -1.0)
+    };
+
+    Out.Position = float4(Pos[VertexID], 0.0, 1.0);
+    Out.UV = float2(Out.Position.x * 0.5f + 0.5f,
+                    1.0f - (Out.Position.y * 0.5f + 0.5f));
+    return Out;
+}
+
+float4 MainPS(VSOutput In) : SV_Target0
+{
+    const float distanceThreshold = 5.f;
+    float2 uv = In.UV;
+    
+
+    float mainDistToCam = 9999.0f;
+
+    [unroll]
+    for (int i = 0; i < CAMERA_NUM; ++i)
+    {
+        if (IsCameraActive(i))
+        {
+            float2 cameraUV = GetScreenUV(i, uv);
+            
+            if (cameraUV.x > 0 && cameraUV.y > 0)
+            {
+                float3 vtx = mul(ViewMatrix, mul(GetModelMatrix(i), float4(GetPositionTex(i, cameraUV) * 100, 1.0)));
+                float tDistToCam = length(vtx);
+
+                if (tDistToCam >= 1.0f && tDistToCam < mainDistToCam)
+                {
+                    mainDistToCam = tDistToCam;
+                }
+            }
+        }
+    }
+
+    float maximumQuality = 0.0f;
+    int maximumQualityIdx = 0;
+    float lastDistToCam = 10000.0f;
+
+    [unroll]
+    for (int i = 0; i < CAMERA_NUM; ++i)
+    {
+        if (IsCameraActive(i))
+        {
+            float2 cameraUV = GetScreenUV(i, uv);
+            if (cameraUV.x <= 0 || cameraUV.y <= 0)
+                continue;
+                
+            float3 vtxTexValue = mul(ViewMatrix, mul(GetModelMatrix(i), float4(GetPositionTex(i, cameraUV).xyz * 100, 1.0)));
+            float3 currentVertex = vtxTexValue.xyz;
+            float currentQuality = GetQualityTex(i, cameraUV).x;
+
+            float distToCam = length(currentVertex);
+
+            // Filterbedingungen wie im GLSL
+            if (!(distToCam >= 1.0f) || !(currentQuality > 0.0f) || abs(mainDistToCam - distToCam) > distanceThreshold)
+                continue;
+
+            if (distToCam + distanceThreshold < lastDistToCam)
+            {
+                maximumQuality = currentQuality;
+                maximumQualityIdx = i;
+                lastDistToCam = distToCam;
+            }
+            else if (distToCam - distanceThreshold > lastDistToCam)
+            {
+                continue;
+            }
+            else if (currentQuality > maximumQuality)
+            {
+                maximumQuality = currentQuality;
+                maximumQualityIdx = i;
+            }
+        }
+    }
+
+    //return float4(maximumQuality, maximumQuality, 0.0f, 1.0f);
+    return float4(float(maximumQualityIdx) / 8.0, 0.0f, 0.0f, 1.0f);
+}

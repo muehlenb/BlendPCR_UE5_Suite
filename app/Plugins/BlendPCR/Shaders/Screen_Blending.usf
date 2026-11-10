@@ -1,0 +1,349 @@
+#include "/Engine/Private/Common.ush"
+
+#define CAMERA_NUM 8
+
+struct VSOutput
+{
+    float4 Position : SV_POSITION;
+    float2 UV : TEXCOORD0;
+};
+
+VSOutput MainVS(uint VertexID : SV_VertexID)
+{
+    VSOutput Out;
+    float2 Pos[3] =
+    {
+        float2(-1.0, -1.0),
+        float2(-1.0, 3.0),
+        float2(3.0, -1.0)
+    };
+    Out.Position = float4(Pos[VertexID], 0.0, 1.0);
+    Out.UV = float2(Out.Position.x * 0.5f + 0.5f,
+                    1.0f - (Out.Position.y * 0.5f + 0.5f));
+    return Out;
+}
+
+// Screen UV Textures (enthalten UV-Koordinaten für Indirektion)
+Texture2D<float2> ScreenUV0;
+Texture2D<float2> ScreenUV1;
+Texture2D<float2> ScreenUV2;
+Texture2D<float2> ScreenUV3;
+Texture2D<float2> ScreenUV4;
+Texture2D<float2> ScreenUV5;
+Texture2D<float2> ScreenUV6;
+Texture2D<float2> ScreenUV7;
+
+// Camera Textures
+Texture2D Color0, Color1, Color2, Color3, Color4, Color5, Color6, Color7;
+Texture2D Vertices0, Vertices1, Vertices2, Vertices3, Vertices4, Vertices5, Vertices6, Vertices7;
+Texture2D Quality0, Quality1, Quality2, Quality3, Quality4, Quality5, Quality6, Quality7;
+Texture2D ScreenDepth0, ScreenDepth1, ScreenDepth2, ScreenDepth3, ScreenDepth4, ScreenDepth5, ScreenDepth6, ScreenDepth7;
+
+// Weight Textures
+Texture2D MiniWeightsA;
+Texture2D MiniWeightsB;
+
+SamplerState LinearSampler;
+
+// Camera Active Flags
+float CameraActive0;
+float CameraActive1;
+float CameraActive2;
+float CameraActive3;
+float CameraActive4;
+float CameraActive5;
+float CameraActive6;
+float CameraActive7;
+
+float4x4 ModelMatrix0;
+float4x4 ModelMatrix1;
+float4x4 ModelMatrix2;
+float4x4 ModelMatrix3;
+float4x4 ModelMatrix4;
+float4x4 ModelMatrix5;
+float4x4 ModelMatrix6;
+float4x4 ModelMatrix7;
+
+float4x4 ViewMatrix;
+
+float PreColorSaturation;
+float4 PreColorMultiplier;
+float ColorHueShift;
+float ColorContrast;
+float ColorBrightness;
+float ColorSaturation;
+float ColorEdgeAlpha;
+float ColorAlpha;
+
+struct PSOutput
+{
+    float4 Color : SV_Target0;
+    float Depth : SV_Target1;
+};
+
+float3 SRGBToLinear(float3 srgb)
+{
+    float3 low = srgb / 12.92;
+    float3 high = pow((srgb + 0.055) / 1.055, 2.4);
+    float3 mask = step(0.04045, srgb); // 0 oder 1 pro Komponente
+    return lerp(low, high, mask);
+}
+
+float3 RGBtoHSV(float3 c)
+{
+    float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+
+    float4 p = lerp(
+        float4(c.bg, K.wz),
+        float4(c.gb, K.xy),
+        step(c.b, c.g)
+    );
+
+    float4 q = lerp(
+        float4(p.xyw, c.r),
+        float4(c.r, p.yzx),
+        step(p.x, c.r)
+    );
+
+    float d = q.x - min(q.w, q.y);
+    float e = 1e-10;
+
+    float h = abs(q.z + (q.w - q.y) / (6.0 * d + e));
+    float s = d / (q.x + e);
+    float v = q.x;
+
+    return float3(h, s, v);
+}
+
+float3 HSVtoRGB(float3 c)
+{
+    float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+
+    float3 p = abs(frac(c.xxx + K.xyz) * 6.0 - K.www);
+
+    return c.z * lerp(K.xxx, saturate(p - K.xxx), c.y);
+}
+
+PSOutput MainPS(VSOutput In)
+{
+    PSOutput Output;
+    
+    float distanceThreshold = 5.0;
+    float3 sumColor = float3(0.0, 0.0, 0.0);
+    float sumDepth = 0.0;
+    float sumAlpha = 0.0;
+    float lastDistToCam = 10000.0;
+    
+    // Smooth blend weights aus beiden Weight-Texturen laden
+    float smoothBlend[8];
+    float4 miniWValueA = MiniWeightsA.Sample(LinearSampler, In.UV);
+    float4 miniWValueB = MiniWeightsB.Sample(LinearSampler, In.UV);
+    
+    smoothBlend[0] = miniWValueA.x;
+    smoothBlend[1] = miniWValueA.y;
+    smoothBlend[2] = miniWValueA.z;
+    smoothBlend[3] = miniWValueA.w;
+    smoothBlend[4] = miniWValueB.x;
+    smoothBlend[5] = miniWValueB.y;
+    smoothBlend[6] = miniWValueB.z;
+    smoothBlend[7] = miniWValueB.w;
+    
+    // Camera active array
+    bool isCameraActive[8];
+    isCameraActive[0] = CameraActive0 > 0.5;
+    isCameraActive[1] = CameraActive1 > 0.5;
+    isCameraActive[2] = CameraActive2 > 0.5;
+    isCameraActive[3] = CameraActive3 > 0.5;
+    isCameraActive[4] = CameraActive4 > 0.5;
+    isCameraActive[5] = CameraActive5 > 0.5;
+    isCameraActive[6] = CameraActive6 > 0.5;
+    isCameraActive[7] = CameraActive7 > 0.5;
+    
+    // Durch alle Kameras iterieren
+    [unroll]
+    for (int i = 0; i < CAMERA_NUM; ++i)
+    {
+        if (!isCameraActive[i])
+            continue;
+            
+        // WICHTIG: Screen UV für diese Kamera laden (Indirektion!)
+        float2 cameraUV = float2(0.0, 0.0);
+        
+        if (i == 0)
+            cameraUV = ScreenUV0.Sample(LinearSampler, In.UV);
+        else if (i == 1)
+            cameraUV = ScreenUV1.Sample(LinearSampler, In.UV);
+        else if (i == 2)
+            cameraUV = ScreenUV2.Sample(LinearSampler, In.UV);
+        else if (i == 3)
+            cameraUV = ScreenUV3.Sample(LinearSampler, In.UV);
+        else if (i == 4)
+            cameraUV = ScreenUV4.Sample(LinearSampler, In.UV);
+        else if (i == 5)
+            cameraUV = ScreenUV5.Sample(LinearSampler, In.UV);
+        else if (i == 6)
+            cameraUV = ScreenUV6.Sample(LinearSampler, In.UV);
+        else if (i == 7)
+            cameraUV = ScreenUV7.Sample(LinearSampler, In.UV);
+        
+        
+        // Prüfen ob UV gültig ist (innerhalb [0,1])
+        if (cameraUV.x <= 0.0 || cameraUV.x > 1.0 || cameraUV.y <= 0.0 || cameraUV.y > 1.0)
+            continue;
+        
+        // Mit der indirekten UV die Texturen samplen
+        float4 vertexData = float4(0, 0, 0, 0);
+        float2 qualityData = float2(0, 0);
+        float3 currentColor = float3(0, 0, 0);
+        float currentDepth = 0.0;
+        
+        float4x4 currentModel;
+        
+        if (i == 0)
+        {
+            vertexData = Vertices0.Sample(LinearSampler, cameraUV);
+            qualityData = Quality0.Sample(LinearSampler, cameraUV).xy;
+            currentColor = Color0.Sample(LinearSampler, cameraUV).rgb;
+            currentDepth = ScreenDepth0.Sample(LinearSampler, In.UV).r;
+            currentModel = ModelMatrix0;
+
+        }
+        else if (i == 1)
+        {
+            vertexData = Vertices1.Sample(LinearSampler, cameraUV);
+            qualityData = Quality1.Sample(LinearSampler, cameraUV).xy;
+            currentColor = Color1.Sample(LinearSampler, cameraUV).rgb;
+            currentDepth = ScreenDepth1.Sample(LinearSampler, In.UV).r;
+            currentModel = ModelMatrix1;
+
+            /*
+            Output.Color = float4(SRGBToLinear(float3(qualityData.y / 1.f, qualityData.y / 1.f, qualityData.y / 1.f)), 1.0);
+            if(cameraUV.x > 0)
+                Output.Depth = currentDepth;
+            else
+                Output.Depth = -0.1;
+            return Output;
+*/
+        }
+        else if (i == 2)
+        {
+            vertexData = Vertices2.Sample(LinearSampler, cameraUV);
+            qualityData = Quality2.Sample(LinearSampler, cameraUV).xy;
+            currentColor = Color2.Sample(LinearSampler, cameraUV).rgb;
+            currentDepth = ScreenDepth2.Sample(LinearSampler, In.UV).r;
+            currentModel = ModelMatrix2;
+        }
+        else if (i == 3)
+        {
+            vertexData = Vertices3.Sample(LinearSampler, cameraUV);
+            qualityData = Quality3.Sample(LinearSampler, cameraUV).xy;
+            currentColor = Color3.Sample(LinearSampler, cameraUV).rgb;
+            currentDepth = ScreenDepth3.Sample(LinearSampler, In.UV).r;
+            currentModel = ModelMatrix3;
+        }
+        else if (i == 4)
+        {
+            vertexData = Vertices4.Sample(LinearSampler, cameraUV);
+            qualityData = Quality4.Sample(LinearSampler, cameraUV).xy;
+            currentColor = Color4.Sample(LinearSampler, cameraUV).rgb;
+            currentDepth = ScreenDepth4.Sample(LinearSampler, In.UV).r;
+            currentModel = ModelMatrix4;
+        }
+        else if (i == 5)
+        {
+            vertexData = Vertices5.Sample(LinearSampler, cameraUV);
+            qualityData = Quality5.Sample(LinearSampler, cameraUV).xy;
+            currentColor = Color5.Sample(LinearSampler, cameraUV).rgb;
+            currentDepth = ScreenDepth5.Sample(LinearSampler, In.UV).r;
+            currentModel = ModelMatrix5;
+        }
+        else if (i == 6)
+        {
+            vertexData = Vertices6.Sample(LinearSampler, cameraUV);
+            qualityData = Quality6.Sample(LinearSampler, cameraUV).xy;
+            currentColor = Color6.Sample(LinearSampler, cameraUV).rgb;
+            currentDepth = ScreenDepth6.Sample(LinearSampler, In.UV).r;
+            currentModel = ModelMatrix6;
+        }
+        else if (i == 7)
+        {
+            vertexData = Vertices7.Sample(LinearSampler, cameraUV);
+            qualityData = Quality7.Sample(LinearSampler, cameraUV).xy;
+            currentColor = Color7.Sample(LinearSampler, cameraUV).rgb;
+            currentDepth = ScreenDepth7.Sample(LinearSampler, In.UV).r;
+            currentModel = ModelMatrix7;
+        }
+        
+        float4 currentVertex = float4(vertexData.xyz, 1.0);
+        float3 vtx = mul(ViewMatrix, mul(currentModel, float4(currentVertex.xyz * 100, 1.0)));
+        
+        float currentAlpha = smoothBlend[i] * qualityData.y;
+        float distToCam = length(vtx);
+        
+        if(qualityData.y < 0.2)
+            continue;
+        
+        // FIX 1: NaN-sichere Validitätsprüfungen (direkter Vergleich statt Negation)
+        if (distToCam < 1.0 || currentAlpha <= 0.0001)
+            continue;
+            
+        // Depth-Peeling Logik
+        if (distToCam + distanceThreshold < lastDistToCam)
+        {
+            sumColor = float3(0.0, 0.0, 0.0);
+            sumDepth = 0.0;
+            sumAlpha = 0.0;
+            lastDistToCam = distToCam;
+        }
+        else if (distToCam - distanceThreshold > lastDistToCam)
+        {
+            continue;
+        }
+        
+        
+        sumColor += currentColor * currentAlpha;
+        sumDepth += currentDepth * currentAlpha;
+        sumAlpha += currentAlpha;
+    }
+    
+    // FIX 2: Numerisch stabile Division durch sumAlpha
+    float epsilon = 1e-6;
+    if (sumAlpha > 0.05)
+    {
+        float invAlpha = 1.0 / sumAlpha;
+        float3 Color = float3(SRGBToLinear(sumColor * invAlpha));
+        
+        float3 preHSV = RGBtoHSV(Color);
+        preHSV.y *= PreColorSaturation;
+        
+        float3 preMultiplier = HSVtoRGB(preHSV) * PreColorMultiplier.xyz;
+        float3 hsv = RGBtoHSV(preMultiplier);
+        
+        hsv.x = frac(hsv.x + ColorHueShift / 360.0);
+
+        hsv.y *= ColorSaturation;
+        hsv.z *= ColorBrightness;
+
+        hsv.y = saturate(hsv.y);
+        hsv.z = max(hsv.z, 0.0);
+        
+        float3 rgb = HSVtoRGB(hsv);
+        rgb = (rgb - 0.5) * ColorContrast + 0.5;
+        rgb = saturate(rgb);
+        
+        Output.Depth = sumDepth * invAlpha;
+        Output.Color = float4(rgb, (ColorEdgeAlpha + sumAlpha * (1 - ColorEdgeAlpha)) * ColorAlpha);
+        
+
+    }
+    else
+    {
+        Output.Color = float4(0.0, 0.0, 0.0, 0.0);
+        Output.Depth = 1.0;
+        clip(-1);
+    }
+    
+    
+    //Output.Color = float4(smoothBlend[6], smoothBlend[7], smoothBlend[5], 1.0);
+    return Output;
+}

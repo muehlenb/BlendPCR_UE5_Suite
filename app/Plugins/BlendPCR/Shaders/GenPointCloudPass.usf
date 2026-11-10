@@ -1,0 +1,43 @@
+#include "/Engine/Private/Common.ush"
+
+Texture2D<uint> DepthTex : register(t0);
+Texture2D<float2> LookupTex : register(t1);
+SamplerState PointSampler : register(s0);
+
+float2 TexSize;
+
+struct VSOutput
+{
+    float4 Position : SV_POSITION;
+    float2 UV : TEXCOORD0;
+};
+
+// --- Vertex Shader: erzeugt Fullscreen-Triangle ohne Vertex-Buffer ---
+VSOutput MainVS(uint VertexID : SV_VertexID)
+{
+    VSOutput Out;
+
+    // drei Ecken des Fullscreen-Triangles
+    float2 Pos[3] =
+    {
+        float2(-1.0, -1.0),
+        float2(-1.0, 3.0),
+        float2(3.0, -1.0)
+    };
+
+    Out.Position = float4(Pos[VertexID], 0.0, 1.0);
+    Out.UV = float2(Out.Position.x * 0.5f + 0.5f, 1.0f - (Out.Position.y * 0.5f + 0.5f));
+    return Out;
+}
+
+// --- Pixel Shader ---
+float4 MainPS(VSOutput In) : SV_Target0
+{
+    uint depthRaw = DepthTex.Load(int3(In.UV * TexSize, 0)).r;
+    float depthM = (float(depthRaw) * 0.001f); // mm → m
+
+    float2 lookup = LookupTex.Sample(PointSampler, In.UV);
+    float3 pos = float3(lookup.xy * depthM, depthM);
+
+    return float4(pos, 1.0);
+}

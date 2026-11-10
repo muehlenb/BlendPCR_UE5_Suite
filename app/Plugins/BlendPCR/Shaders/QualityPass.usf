@@ -1,0 +1,65 @@
+#include "/Engine/Private/Common.ush"
+
+Texture2D<float4> VerticesTex : register(t0);
+Texture2D<float4> NormalsTex : register(t1);
+Texture2D<float> EdgeDistTex : register(t2);
+SamplerState PointSampler : register(s0);
+
+struct VSOutput
+{
+    float4 Position : SV_POSITION;
+    float2 UV : TEXCOORD0;
+};
+
+VSOutput MainVS(uint VertexID : SV_VertexID)
+{
+    VSOutput Out;
+    float2 Pos[3] =
+    {
+        float2(-1.0, -1.0),
+        float2(-1.0, 3.0),
+        float2(3.0, -1.0)
+    };
+
+    Out.Position = float4(Pos[VertexID], 0.0, 1.0);
+    Out.UV = float2(Out.Position.x * 0.5f + 0.5f,
+                    1.0f - (Out.Position.y * 0.5f + 0.5f));
+    return Out;
+}
+
+// ------------------------------------------------------------
+
+float easeInOut(float x)
+{
+    return (3.0 * x * x - 2.0 * x * x * x);
+}
+
+// ------------------------------------------------------------
+
+float2 MainPS(VSOutput In) : SV_Target0
+{
+    const float MaxCamDist = 6.0;
+
+    // Korrektur: Hier war der Fehler — es muss 'float3 point' heißen
+    float3 point3D = VerticesTex.SampleLevel(PointSampler, In.UV, 0).xyz;
+    float3 normal = NormalsTex.SampleLevel(PointSampler, In.UV, 0).xyz;
+    float edgeProx = EdgeDistTex.SampleLevel(PointSampler, In.UV, 0).r;
+
+    // Schutz gegen ungültige Punkte
+    if (point3D.z <= 0.0f || any(isnan(point3D)))
+    return float2(0, 0);
+
+    float camDist = clamp(length(point3D), 0.0, MaxCamDist);
+    float3 N = normalize(normal);
+    float3 V = normalize(point3D);
+
+    // Distanz- und Richtungsfaktor
+    float distFactor =
+        ((MaxCamDist * MaxCamDist - camDist * camDist) / (MaxCamDist * MaxCamDist)) *
+        clamp(dot(N, V), 0.1, 1.0);
+
+    // Kantenglättung über EdgeDistance
+    float smoothEdge = easeInOut(clamp(1.0 - edgeProx, 0.0, 1.0));
+
+    return float2(distFactor, smoothEdge);
+}
