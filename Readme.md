@@ -92,3 +92,20 @@ The relevant implementation can be found in:
 - Pose-graph optimization does not currently weight pairwise transformations.
 - Niagara component lifecycle management is incomplete.
 - BlendPCR rendering may differ from the original implementation; some artifacts at the view border of the cameras remain visible.
+
+
+## Cite
+This work is an Unreal Engine reimplementation of BlendPCR. If you use this code, please cite the original paper:
+```
+@inproceedings{10.2312:egve.20241366,
+    booktitle = {ICAT-EGVE 2024 - International Conference on Artificial Reality and Telexistence and Eurographics Symposium on Virtual Environments},
+    editor = {Hasegawa, Shoichi and Sakata, Nobuchika and Sundstedt, Veronica},
+    title = {{BlendPCR: Seamless and Efficient Rendering of Dynamic Point Clouds captured by Multiple RGB-D Cameras}},
+    author = {Mühlenbrock, Andre and Weller, Rene and Zachmann, Gabriel},
+    year = {2024},
+    publisher = {The Eurographics Association},
+    ISSN = {1727-530X},
+    ISBN = {978-3-03868-245-5},
+    DOI = {10.2312/egve.20241366}
+}
+```
